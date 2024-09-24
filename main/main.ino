@@ -30,15 +30,16 @@ const char* endpoint = "/transit/StopMonitoring"
 
 // Display vars
 int pinCS = 2; 
-int numberOfHorizontalDisplays = 12;
+int numberOfHorizontalDisplays = 24;
 int numberOfVerticalDisplays   = 1;
+int numDepartures = numberOfHorizontalDisplays / 12;
 Max72xxPanel matrix = Max72xxPanel(pinCS, numberOfHorizontalDisplays, numberOfVerticalDisplays);
 String content = "Transit Display";
 int wait = 50; // In milliseconds
 int spacer = 1;
 int width  = 5 + spacer; // The font width is 5 pixels
 int departureCounter = 0;
-int displayBufSize = 17;
+int displayBufSize = 33;
 
 void setup() {
   configureMatrix();
@@ -120,6 +121,7 @@ void decodeJSON(String response){
 
   // Extract and print required values from 'MonitoredStopVisit' array
   departureCounter = 0; // Keep track of number of departures
+  String departureList = "";
   Serial.println("\nDiridon Northbound Departure Board:");
   JsonArray monitoredStopVisit = doc["ServiceDelivery"]["StopMonitoringDelivery"]["MonitoredStopVisit"].as<JsonArray>();
   if (monitoredStopVisit.size() == 0) {
@@ -139,16 +141,22 @@ void decodeJSON(String response){
         //Serial.println("Skipping B7 train");
         continue;
       }
-      printDeparture(datedVehicleJourneyRef, aimedDepartureAdjTime, expectedDepartureAdjTime);
+
+      // Run until all departures are filled
+      if (departureCounter >= numDepartures) {
+        break;
+      }
+      departureList += printDeparture(datedVehicleJourneyRef, aimedDepartureAdjTime, expectedDepartureAdjTime);
       departureCounter++;
     }
+    content = departureList;
   }
 }
 
 // Configure display
 void configureMatrix(){
   matrix.setIntensity(2); // Use a value between 0 and 15 for brightness
-  for (int i = 0; i < numberOfHorizontalDisplays;i++) {
+  for (int i = 0; i < numberOfHorizontalDisplays * numberOfVerticalDisplays; i++) {
     matrix.setRotation(i, 1); // Set the rotation of each display
   }
   matrix.fillScreen(LOW);
@@ -193,12 +201,17 @@ void initializeSerial(){
 // Display Text on LED Matrix
 void displayStaticString(const char* text) {
   matrix.fillScreen(LOW);
-  matrix.setCursor(0, 0);  // Start at top-left corner
-  matrix.print(text);      // Print the text
+  int text_size = strlen(text);
+
+  for (int i = 0; i < text_size; i+=17) {
+    matrix.setCursor(0, i);  // Start at top-left corner
+    matrix.print(text);      // Print the text
+  }
+  
   matrix.write();          // Write the text to the display
 }
 
-void printDeparture(const char* trainNum, time_t aimedDepartureTime, time_t expectedDepartureTime) {
+String printDeparture(const char* trainNum, time_t aimedDepartureTime, time_t expectedDepartureTime) {
   // Step 1: Calculate the train delay in minutes
   int delayMinutes = (expectedDepartureTime - aimedDepartureTime) / 60;
   
@@ -227,10 +240,8 @@ void printDeparture(const char* trainNum, time_t aimedDepartureTime, time_t expe
 
   // Print the final string
   Serial.println(finalStr);
-  //Stop after first departure
-  if (departureCounter < 1) {
-    content = finalStr;
-  }
+
+  return finalStr;
 }
 
 // Check if daylight saving time is currently active
