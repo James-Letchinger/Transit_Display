@@ -39,7 +39,7 @@ int wait = 50; // In milliseconds
 int spacer = 1;
 int width  = 5 + spacer; // The font width is 5 pixels
 int departureCounter = 0;
-int displayBufSize = 33;
+int displayBufSize = (numDepartures * 16) + 1;
 
 void setup() {
   configureMatrix();
@@ -155,7 +155,7 @@ void decodeJSON(String response){
 
 // Configure display
 void configureMatrix(){
-  matrix.setIntensity(2); // Use a value between 0 and 15 for brightness
+  matrix.setIntensity(1); // Use a value between 0 and 15 for brightness
   for (int i = 0; i < numberOfHorizontalDisplays * numberOfVerticalDisplays; i++) {
     matrix.setRotation(i, 1); // Set the rotation of each display
   }
