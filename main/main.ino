@@ -33,11 +33,14 @@ const int pinCS = 2;
 const int numberOfHorizontalDisplays = 12;
 const int numberOfVerticalDisplays = 2;
 const int numDepartures = numberOfVerticalDisplays;
-const int lineSize = 16;
+const int depTrainSize = 3;
+const int depTimeSize = 5;
+const int depStatusSize = 6;
+const int lineSize = depTrainSize + depTimeSize + depStatusSize + 2; // 2 is for spaces
 const int displayBufSize = (numDepartures * lineSize) + 1;
 
 Max72xxPanel matrix = Max72xxPanel(pinCS, numberOfHorizontalDisplays, numberOfVerticalDisplays);
-String content = "Transit Display";
+char content[displayBufSize] = "Transit Display";
 int departureCounter = 0;
 
 
@@ -57,12 +60,10 @@ void loop() {
   }
 
   // Display the static string
-  char stringBuf[displayBufSize];
-  content.toCharArray(stringBuf, displayBufSize);
-  displayStaticString(stringBuf);
+  displayStaticString(content);
 
-  Serial.println("\nValue of stringBuf:");
-  Serial.println(stringBuf);
+  Serial.println("\nValue of content:");
+  Serial.println(content);
 
   // Run once per minute
   delay(30000);
@@ -96,7 +97,14 @@ void sendHTTPRequest() {
       Serial.println("BOM detected, removing it");
       response.remove(0, 3);
     }
-    decodeJSON(response);
+    
+    Serial.print("Length of JSON response: ");
+    Serial.println(response.length());
+    char response_string[response.length()+1];
+    response.toCharArray(response_string, response.length()+1);
+    Serial.println("JSON response:");
+    Serial.println(response_string);
+    decodeJSON(response_string);
   } else {
     Serial.printf("HTTP GET request failed with code: %d\n", statusCode);
     // Display HTTP code if error occurred
@@ -106,7 +114,7 @@ void sendHTTPRequest() {
   }
 }
 
-void decodeJSON(String response) {
+void decodeJSON(char* response) {
   // Create a JSON document
   JsonDocument doc;
 
@@ -121,7 +129,6 @@ void decodeJSON(String response) {
 
   // Extract and print required values from 'MonitoredStopVisit' array
   departureCounter = 0;  // Keep track of number of departures
-  String departureList = "";
   Serial.println("\nDiridon Northbound Departure Board:");
   JsonArray monitoredStopVisit = doc["ServiceDelivery"]["StopMonitoringDelivery"]["MonitoredStopVisit"].as<JsonArray>();
   if (monitoredStopVisit.size() == 0) {
@@ -146,10 +153,19 @@ void decodeJSON(String response) {
       if (departureCounter >= numDepartures) {
         break;
       }
-      departureList += printDeparture(datedVehicleJourneyRef, aimedDepartureAdjTime, expectedDepartureAdjTime);
+
+      int contentIndex = departureCounter * lineSize;
+      Serial.print("contentIndex: ");
+      Serial.println(contentIndex);
+
+      //char departure[lineSize + 1];
+      char* departure = printDeparture(datedVehicleJourneyRef, aimedDepartureAdjTime, expectedDepartureAdjTime);
+      Serial.print("departure string: ");
+      Serial.println(departure);
+
+      strncpy(&content[contentIndex], departure, lineSize + 1);
       departureCounter++;
     }
-    content = departureList;
   }
 }
 
@@ -225,12 +241,12 @@ void displayStaticString(const char* text) {
   matrix.write();  // Write the text to the display
 }
 
-String printDeparture(const char* trainNum, time_t aimedDepartureTime, time_t expectedDepartureTime) {
+char* printDeparture(const char* trainNum, time_t aimedDepartureTime, time_t expectedDepartureTime) {
   // Step 1: Calculate the train delay in minutes
   int delayMinutes = (expectedDepartureTime - aimedDepartureTime) / 60;
 
   // Step 2: Create the delay string
-  char delayStr[10];
+  char delayStr[depStatusSize + 1]; // 7
   if (delayMinutes == 0) {
     strcpy(delayStr, "ONTIME");
   } else {
@@ -238,7 +254,7 @@ String printDeparture(const char* trainNum, time_t aimedDepartureTime, time_t ex
   }
 
   // Step 3: Create the expected departure time string in 12-hour format with AM/PM
-  char departureTimeStr[10];
+  char departureTimeStr[depTimeSize + 1]; // 6
   int hr = hour(expectedDepartureTime);
   int min = minute(expectedDepartureTime);
   bool isPM = hr >= 12;
@@ -249,7 +265,9 @@ String printDeparture(const char* trainNum, time_t aimedDepartureTime, time_t ex
   sprintf(departureTimeStr, "%02d:%02d", hr, min);
 
   // Step 4: Concatenate the variables into the final string
-  char finalStr[20];
+  static char finalStr[lineSize + 1]; // 17
+  memset(finalStr, ' ', lineSize);
+  finalStr[lineSize] = '\0';
   sprintf(finalStr, "%s %s %s", trainNum, departureTimeStr, delayStr);
 
   // Print the final string
