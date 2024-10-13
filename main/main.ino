@@ -20,26 +20,26 @@ const char* ntpServer = "pool.ntp.org";
 const int utcOffsetInSeconds = -8 * 3600;  // UTC-8 for standard time
 const int daylightOffsetInSeconds = 3600;  // +1 hour for daylight saving time
 WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP, ntpServer, 0, 60000); // Update interval: 60 seconds
+NTPClient timeClient(ntpUDP, ntpServer, 0, 60000);  // Update interval: 60 seconds
 
 // 511 Transit API host and endpoint
 const char* host = "api.511.org";
 const int port = 80;
 const char* endpoint = "/transit/StopMonitoring"
-  "?api_key=55026653-b50f-4ffc-aa52-53c4ee0b8bd4&agency=CT&stopCode=70261&format=json";
+                       "?api_key=55026653-b50f-4ffc-aa52-53c4ee0b8bd4&agency=CT&stopCode=70261&format=json";
 
 // Display vars
-int pinCS = 2; 
-int numberOfHorizontalDisplays = 24;
-int numberOfVerticalDisplays   = 1;
-int numDepartures = numberOfHorizontalDisplays / 12;
+const int pinCS = 2;
+const int numberOfHorizontalDisplays = 12;
+const int numberOfVerticalDisplays = 2;
+const int numDepartures = numberOfVerticalDisplays;
+const int lineSize = 16;
+const int displayBufSize = (numDepartures * lineSize) + 1;
+
 Max72xxPanel matrix = Max72xxPanel(pinCS, numberOfHorizontalDisplays, numberOfVerticalDisplays);
 String content = "Transit Display";
-int wait = 50; // In milliseconds
-int spacer = 1;
-int width  = 5 + spacer; // The font width is 5 pixels
 int departureCounter = 0;
-int displayBufSize = (numDepartures * 16) + 1;
+
 
 void setup() {
   configureMatrix();
@@ -70,7 +70,7 @@ void loop() {
   delay(30000);
 }
 
-void sendHTTPRequest(){
+void sendHTTPRequest() {
   WiFiClient wifiClient;
   HttpClient http(wifiClient, host, port);
 
@@ -86,8 +86,8 @@ void sendHTTPRequest(){
 
   // Check the HTTP status code
   Serial.printf("HTTP GET request sent, code: %d\n", statusCode);
-  
-  if (statusCode == 200) {      
+
+  if (statusCode == 200) {
     Serial.println("Raw Response:");
     Serial.println(response);
 
@@ -106,7 +106,7 @@ void sendHTTPRequest(){
   }
 }
 
-void decodeJSON(String response){
+void decodeJSON(String response) {
   // Create a JSON document
   JsonDocument doc;
 
@@ -120,7 +120,7 @@ void decodeJSON(String response){
   }
 
   // Extract and print required values from 'MonitoredStopVisit' array
-  departureCounter = 0; // Keep track of number of departures
+  departureCounter = 0;  // Keep track of number of departures
   String departureList = "";
   Serial.println("\nDiridon Northbound Departure Board:");
   JsonArray monitoredStopVisit = doc["ServiceDelivery"]["StopMonitoringDelivery"]["MonitoredStopVisit"].as<JsonArray>();
@@ -154,14 +154,14 @@ void decodeJSON(String response){
 }
 
 // Configure display
-void configureMatrix(){
-  matrix.setIntensity(1); // Use a value between 0 and 15 for brightness
+void configureMatrix() {
+  matrix.setIntensity(1);  // Use a value between 0 and 15 for brightness
   for (int i = 0; i < numberOfHorizontalDisplays * numberOfVerticalDisplays; i++) {
-    matrix.setRotation(i, 1); // Set the rotation of each display
+    matrix.setRotation(i, 1);  // Set the rotation of each display
   }
   matrix.fillScreen(LOW);
-  matrix.setTextSize(1); // Set the text size
-  matrix.setTextWrap(false); // Don't wrap text at end of line
+  matrix.setTextSize(1);      // Set the text size
+  matrix.setTextWrap(false);  // Don't wrap text at end of line
   matrix.write();
 }
 
@@ -192,29 +192,43 @@ void initializeWiFi() {
   displayStaticString("WiFi Connected");
 }
 
-void initializeSerial(){
+void initializeSerial() {
   Serial.begin(115200);
-  delay(500); // Wait for Serial terminal
+  delay(500);  // Wait for Serial terminal
   Serial.println("\nLoading Transit Display...");
 }
 
 // Display Text on LED Matrix
 void displayStaticString(const char* text) {
   matrix.fillScreen(LOW);
-  int text_size = strlen(text);
+  int textLength = strlen(text); // Get the length of the text
+  int startIndex = 0; // Start index for each substring
+  int yCursor = 0;
 
-  for (int i = 0; i < text_size; i+=17) {
-    matrix.setCursor(0, i);  // Start at top-left corner
-    matrix.print(text);      // Print the text
+  // Loop through the text, slicing it into chunks of size lineSize
+  while (startIndex < textLength) {
+      char buffer[lineSize + 1]; // Temporary buffer to hold each substring
+      int endIndex = min(startIndex + lineSize, textLength); // Calculate the end index
+
+      // Copy a portion of the text to the buffer
+      strncpy(buffer, &text[startIndex], endIndex - startIndex);
+      buffer[endIndex - startIndex] = '\0'; // Null-terminate the string
+
+      // Print the buffer to the matrix
+      matrix.setCursor(0, yCursor);  // Start at top-left corner
+      matrix.print(buffer);
+
+      startIndex += lineSize; // Move to the next portion of text
+      yCursor += 8;
   }
-  
-  matrix.write();          // Write the text to the display
+
+  matrix.write();  // Write the text to the display
 }
 
 String printDeparture(const char* trainNum, time_t aimedDepartureTime, time_t expectedDepartureTime) {
   // Step 1: Calculate the train delay in minutes
   int delayMinutes = (expectedDepartureTime - aimedDepartureTime) / 60;
-  
+
   // Step 2: Create the delay string
   char delayStr[10];
   if (delayMinutes == 0) {
@@ -222,18 +236,18 @@ String printDeparture(const char* trainNum, time_t aimedDepartureTime, time_t ex
   } else {
     sprintf(delayStr, "%dM LT", delayMinutes);
   }
-  
+
   // Step 3: Create the expected departure time string in 12-hour format with AM/PM
   char departureTimeStr[10];
   int hr = hour(expectedDepartureTime);
   int min = minute(expectedDepartureTime);
   bool isPM = hr >= 12;
-  
+
   hr = hr % 12;
   if (hr == 0) hr = 12;
 
   sprintf(departureTimeStr, "%02d:%02d", hr, min);
-  
+
   // Step 4: Concatenate the variables into the final string
   char finalStr[20];
   sprintf(finalStr, "%s %s %s", trainNum, departureTimeStr, delayStr);
@@ -282,7 +296,7 @@ void print12HourTime(time_t time) {
   int min = minute(time);
   int sec = second(time);
   bool isPM = hr >= 12;
-  
+
   hr = hr % 12;
   if (hr == 0) hr = 12;
 
